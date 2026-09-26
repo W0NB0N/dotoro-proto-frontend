@@ -1,112 +1,148 @@
-import { useState, useEffect, useRef } from 'react'
-import CanvasDisplay from './components/CanvasDisplay'
-import InputController from './components/InputController'
-import './App.css'
+import { useState, useEffect, useRef } from 'react';
+import DotoroScene from './components/DotoroScene';
+import InputController from './components/InputController';
+import './App.css';
 
 function App() {
   const [grid, setGrid] = useState([]);
   const [status, setStatus] = useState("Disconnected");
-  const [logs, setLogs] = useState([]); // {id, source, data, timestamp}
+  const [theme, setTheme] = useState(null);
+  const [powered, setPowered] = useState(true);
   const ws = useRef(null);
 
-  const addLog = (source, data) => {
-    setLogs(prev => [
-      ...prev,
-      { id: Math.random(), source, data, timestamp: Date.now() }
-    ]);
-  };
-
   useEffect(() => {
-    ws.current = new WebSocket("ws://localhost:8000/ws");
+    const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
+    console.log(`Connecting to WebSocket at ${wsUrl}...`);
+    ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => {
       setStatus("Connected");
-      addLog('server', 'Connected to WebSocket');
+      console.log('Connected to WebSocket');
     };
 
-    ws.current.onclose = () => setStatus("Disconnected");
+    ws.current.onclose = () => {
+      setStatus("Disconnected");
+      console.log('Disconnected from WebSocket');
+    };
 
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
 
-      let logMsg = data.type;
-      if (data.type === "GRID_UPDATE") logMsg = "GRID_UPDATE (16x16)"; // Shortened for cleaner log
-      addLog('server', logMsg);
-
       if (data.type === "GRID_UPDATE") {
-        setGrid(data.grid);
+        const size = 32;
+        const reconstructed = [];
+        for (let i = 0; i < data.grid.length; i += size) {
+          reconstructed.push(data.grid.slice(i, i + size));
+        }
+        setGrid(reconstructed);
+
+        if (data.theme) {
+          setTheme(data.theme);
+        }
+      } else if (data.type === "BOOT_COMPLETE") {
+        console.log("BIOS boot complete - playing sound");
+        const audio = new Audio('/sounds/boot.mp3');
+        audio.volume = 0.55;
+        audio.play().catch(e => console.warn("Failed to play boot sound:", e));
       }
     };
 
-    return () => ws.current.close();
+    return () => {
+      if (ws.current) ws.current.close();
+    };
   }, []);
 
+  // Update page background dynamically based on active theme
+  useEffect(() => {
+    if (theme && theme.ambientBg) {
+      document.body.style.backgroundColor = theme.ambientBg;
+      document.body.style.transition = 'background-color 0.8s cubic-bezier(0.25, 1, 0.5, 1)';
+    }
+  }, [theme]);
+
   const handleInput = (eventName) => {
+    if (!powered) return; // Drop inputs when powered off
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       const msg = JSON.stringify({ event: eventName });
       ws.current.send(msg);
-      addLog('client', `Event: ${eventName}`);
+      console.log(`Sent event: ${eventName}`);
     }
   };
 
+  const handlePowerToggle = () => {
+    setPowered(prev => {
+      const next = !prev;
+      console.log(`Power toggled: ${next ? 'ON' : 'OFF'}`);
+
+      // If we are turning it ON, trigger the BIOS boot sequence on the backend
+      if (next && ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({ event: 'Boot' }));
+      }
+
+      return next;
+    });
+  };
+
+  const titleColor = theme?.foreground || '#00ff66';
+
   return (
     <div className="app-container">
-      <h1>Dotoro Proto (Debug Mode)</h1>
-      <div className="status">Status: {status}</div>
+      {/* Dynamic scanlines for CRT monitor feel */}
+      <div className="crt-overlay" />
+      <div className="scan-bar" />
+      <div className="crt-vignette" />
 
-      {/* <=== {MainLayout} :: {Three column layout for debug} ===> */}
-      <div style={{ display: 'flex', gap: '20px', alignItems: 'center', justifyContent: 'center', marginTop: '20px' }}>
-
-        {/* Left: Client Logs */}
-        <DebugLogColumn logs={logs} source="client" title="FRONTEND (Sent)" />
-
-        {/* Center: Canvas */}
-        <CanvasDisplay gridData={grid} />
-
-        {/* Right: Server Logs */}
-        <DebugLogColumn logs={logs} source="server" title="BACKEND (Recv)" />
-      </div>
-
-      <InputController onInput={handleInput} />
-      <div className="instructions">
-        <p>Controls: Arrows, Enter, M (Menu)</p>
-      </div>
-    </div>
-  )
-}
-
-// <=== {HelperSubComponent} :: {Renders a single log column} ===>
-const DebugLogColumn = ({ logs, source, title }) => {
-  const [displayLogs, setDisplayLogs] = useState([]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      setDisplayLogs(logs.filter(l => l.source === source && now - l.timestamp < 5000));
-    }, 100);
-    return () => clearInterval(interval);
-  }, [logs, source]);
-
-  return (
-    <div style={{
-      width: '200px', height: '360px', overflowY: 'hidden',
-      display: 'flex', flexDirection: 'column-reverse', padding: '10px',
-      background: 'rgba(0,0,0,0.8)', border: '1px solid #333', borderRadius: '8px'
-    }}>
-      <div style={{ borderBottom: '1px solid #444', marginBottom: '5px', color: source === 'client' ? '#4ade80' : '#60a5fa', textAlign: 'center', fontSize: '12px' }}>
-        {title}
-      </div>
-      {displayLogs.map(log => (
-        <div key={log.id} style={{
-          fontSize: '10px', fontFamily: 'monospace', marginBottom: '4px',
-          opacity: Math.max(0.2, 1 - (Date.now() - log.timestamp) / 5000),
-          color: source === 'client' ? '#4ade80' : '#60a5fa'
-        }}>
-          [{new Date(log.timestamp).toLocaleTimeString().split(' ')[0]}] {log.data}
+      <header className="header-bar">
+        <h1 className="title-glow" style={{ color: titleColor, textShadow: `0 0 12px ${titleColor}66` }}>
+          Dotoro OS
+        </h1>
+        <div className="system-status" style={{ borderColor: `${titleColor}33` }}>
+          <span className={`status-dot ${status === 'Connected' ? 'online' : 'offline'}`} />
+          {status}
         </div>
-      ))}
+      </header>
+
+      {/* Main viewport for the 3D model */}
+      <div className="canvas-wrapper">
+        <DotoroScene
+          gridData={grid}
+          onInput={handleInput}
+          theme={theme}
+          powered={powered}
+          onPowerToggle={handlePowerToggle}
+        />
+        {!powered && (
+          <div className="power-overlay">
+            <span className="power-text">STANDBY</span>
+          </div>
+        )}
+      </div>
+
+      {/* Keyboard Input Controller */}
+      <InputController onInput={handleInput} />
+
+      {/* Floating Info / Control Guide in bottom right */}
+      <div className="info-button-container">
+        <button className="info-btn" style={{ borderColor: `${titleColor}55`, color: titleColor }}>
+          i
+        </button>
+        <div className="info-tooltip" style={{ borderColor: `${titleColor}44` }}>
+          <h4 style={{ color: titleColor, margin: '0 0 8px 0', borderBottom: `1px solid ${titleColor}33`, paddingBottom: '4px' }}>
+            System Controls
+          </h4>
+          <ul className="info-list">
+            <li><strong>Mouse drag:</strong> Orbit camera</li>
+            <li><strong>Mouse release:</strong> Reset camera view</li>
+            <li><strong>3D keys:</strong> Click directly to interact</li>
+            <li><strong>Arrow keys:</strong> D-Pad navigation</li>
+            <li><strong>Enter key:</strong> Select/Confirm</li>
+            <li><strong>M key:</strong> Back to Menu</li>
+            <li><strong>B key:</strong> Toggle power standby</li>
+          </ul>
+        </div>
+      </div>
     </div>
   );
-};
+}
 
-export default App
+export default App;

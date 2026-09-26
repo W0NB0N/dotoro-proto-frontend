@@ -1,42 +1,428 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+/* Full-screen App Container */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  color: #e2e8f0;
+  font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Floating overlay header bar - completely top-left / top-right spanning full viewport */
+.header-bar {
+  position: absolute;
+  top: 32px;
+  left: 32px;
+  right: 32px;
+  width: auto;
+  max-width: none;
+  transform: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+  pointer-events: none;
+  /* Click through empty header areas to rotate the 3D model */
+}
+
+/* Re-enable pointer events for actual header elements */
+.title-glow,
+.system-status {
+  pointer-events: auto;
+}
+
+.title-glow {
+  font-size: 2.2rem;
+  font-weight: 900;
+  margin: 0;
+  letter-spacing: -0.05em;
+  text-transform: uppercase;
+  transition: color 0.6s ease, text-shadow 0.6s ease;
+}
+
+.system-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-family: monospace;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  transition: border-color 0.6s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.online {
+  background-color: #10b981;
+  box-shadow: 0 0 10px #10b981;
+}
+
+.status-dot.offline {
+  background-color: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+}
+
+/* Canvas stage wrapper - Fills the entire viewport background */
+.canvas-wrapper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+  overflow: hidden;
+  z-index: 1;
+}
+
+/* Container Overlay - fine horizontal scanlines and vertical RGB phosphors */
+.crt-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background:
+    /* Horizontal scanlines: transparent top half, dark bottom half repeating every 2px */
+    linear-gradient(
+      rgba(18, 16, 16, 0) 50%,
+      rgba(0, 0, 0, 0.28) 50%
+    ),
+    /* Vertical RGB sub-pixel columns (phosphor simulation) */
+    linear-gradient(
+      90deg,
+      rgba(255, 0, 0, 0.05),
+      rgba(0, 255, 0, 0.02),
+      rgba(0, 0, 255, 0.05)
+    );
+  background-size: 100% 2px, 3px 100%;
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* Rolling Refresh Scanbar - a 100px wide beam scrolling down the screen */
+.scan-bar {
+  width: 100%;
+  height: 100px;
+  background: linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(255, 255, 255, 0.02) 10%,
+    rgba(0, 0, 0, 0.08) 100%
+  );
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 998;
+  pointer-events: none;
+  animation: crt-roll 12s linear infinite;
+}
+
+/* CRT Vignette - shadows at screen corners */
+.crt-vignette {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(
+    circle,
+    rgba(0, 0, 0, 0) 50%,
+    rgba(0, 0, 0, 0.45) 100%
+  );
+  pointer-events: none;
+  z-index: 997;
+  box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.55);
+}
+
+/* Phosphor Flicker - pseudo-element on crt-overlay that flickers rapidly */
+.crt-overlay::after {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0; left: 0; bottom: 0; right: 0;
+  background: rgba(18, 16, 16, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  animation: crt-flicker 0.15s infinite;
+}
+
+@keyframes crt-roll {
+  0% {
+    transform: translateY(-100px);
+  }
+  100% {
+    transform: translateY(100vh);
+  }
+}
+
+/* Canonical 20-step flicker keyframe animation for analog phosphor glow */
+@keyframes crt-flicker {
+  0%   { opacity: 0.27861; }
+  5%   { opacity: 0.34769; }
+  10%  { opacity: 0.23604; }
+  15%  { opacity: 0.40626; }
+  20%  { opacity: 0.18128; }
+  25%  { opacity: 0.38911; }
+  30%  { opacity: 0.25583; }
+  35%  { opacity: 0.37807; }
+  40%  { opacity: 0.26559; }
+  45%  { opacity: 0.44693; }
+  50%  { opacity: 0.46019; }
+  55%  { opacity: 0.08594; }
+  60%  { opacity: 0.20313; }
+  65%  { opacity: 0.41988; }
+  70%  { opacity: 0.33455; }
+  75%  { opacity: 0.27288; }
+  80%  { opacity: 0.31428; }
+  85%  { opacity: 0.30419; }
+  90%  { opacity: 0.3003;  }
+  95%  { opacity: 0.36108; }
+  100% { opacity: 0.24387; }
+}
+
+/* Standby overlay */
+.power-overlay {
+  position: absolute;
+  top: 96px;
+  right: 32px;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+  border-radius: 8px;
+  padding: 8px 16px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  animation: pulse-standby 2.5s infinite ease-in-out;
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.power-text {
+  font-family: monospace;
+  font-size: 0.8rem;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  color: #ef4444;
+  text-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+@keyframes pulse-standby {
+
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+
+  50% {
+    opacity: 0.95;
+  }
+}
+
+/* Floating Info Controls Tooltip (bottom-right) */
+.info-button-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.info-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-family: 'Georgia', serif;
+  font-style: italic;
+  font-weight: bold;
+  font-size: 1.1rem;
+  border: 1.5px solid;
+  background: rgba(10, 10, 15, 0.7);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.info-btn:hover {
+  background: currentColor;
+  color: #000 !important;
+  box-shadow: 0 0 15px currentColor;
+  transform: scale(1.1);
+}
+
+.info-tooltip {
+  position: absolute;
+  bottom: 48px;
+  right: 0;
+  width: 290px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(8, 8, 12, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(12px) scale(0.95);
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  color: #cbd5e1;
+}
+
+.info-button-container:hover .info-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+}
+
+.info-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-list li {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #cbd5e1;
+  display: flex;
+  justify-content: space-between;
+}
+
+.info-list li strong {
+  color: #f8fafc;
+}
+
+/* === RETRO BIOS BOOT SCREEN STYLING === */
+.boot-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #020403;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  font-family: 'Fira Code', 'Courier New', Courier, monospace;
+  color: #00ff66;
+}
+
+.boot-content {
+  display: flex;
+  flex-direction: column;
+  width: 85%;
+  max-width: 650px;
+}
+
+.bios-header {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  line-height: 1.6;
+  margin-bottom: 2rem;
+  color: #00dd55;
+  text-shadow: 0 0 4px rgba(0, 255, 102, 0.25);
+  border-left: 2px solid #00ff66;
+  padding-left: 10px;
+}
+
+.bios-header p {
+  margin: 2px 0;
+}
+
+.boot-logo-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 2.5rem;
+}
+
+.boot-logo {
+  max-height: 80px;
+  filter: drop-shadow(0 0 8px rgba(0, 255, 102, 0.35)) brightness(1.1);
+  animation: boot-logo-pulse 2.2s infinite ease-in-out;
+}
+
+@keyframes boot-logo-pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 8px rgba(0, 255, 102, 0.35)) brightness(1.1);
+  }
+
+  50% {
+    transform: scale(1.04);
+    filter: drop-shadow(0 0 16px rgba(0, 255, 102, 0.6)) brightness(1.25);
+  }
+}
+
+.boot-progress-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 1rem;
+}
+
+.boot-progress-label {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  font-weight: bold;
+}
+
+.boot-loading-bar-wrapper {
+  flex: 1;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid #00ff66;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 0 8px rgba(0, 255, 102, 0.1);
+}
+
+.boot-loading-bar {
+  height: 100%;
+  background-color: #00ff66;
+  box-shadow: 0 0 10px #00ff66;
+  transition: width 0.12s linear;
+}
+
+.boot-progress-pct {
+  width: 40px;
+  text-align: right;
+  font-size: 0.85rem;
+  font-weight: bold;
+}
+
+.boot-status {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  color: #8effb1;
   text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
+  height: 20px;
+  text-shadow: 0 0 4px rgba(0, 255, 102, 0.2);
 }
