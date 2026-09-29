@@ -73,9 +73,31 @@
   box-shadow: 0 0 10px #10b981;
 }
 
+.status-dot.connecting {
+  background-color: #f59e0b;
+  box-shadow: 0 0 10px #f59e0b;
+  animation: pulse-connecting 1s infinite alternate;
+}
+
+.status-dot.standby {
+  background-color: #a855f7;
+  box-shadow: 0 0 10px #a855f7;
+  animation: pulse-standby-dot 2s infinite ease-in-out;
+}
+
 .status-dot.offline {
   background-color: #ef4444;
   box-shadow: 0 0 10px #ef4444;
+}
+
+@keyframes pulse-connecting {
+  from { opacity: 0.4; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes pulse-standby-dot {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
 }
 
 /* Canvas stage wrapper - Fills the entire viewport background */
