@@ -43,24 +43,80 @@ function App() {
   const [powered, setPowered] = useState(true);
   const ws = useRef(null);
   const connectRef = useRef(null);
+  const lastActivityRef = useRef(Date.now());
+
+  // Track user activity to detect idle state accurately on client
+  useEffect(() => {
+    const recordActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+    window.addEventListener('pointerdown', recordActivity, { passive: true });
+    window.addEventListener('keydown', recordActivity, { passive: true });
+    window.addEventListener('touchstart', recordActivity, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', recordActivity);
+      window.removeEventListener('keydown', recordActivity);
+      window.removeEventListener('touchstart', recordActivity);
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
     let reconnectTimeout = null;
     let wakeListenerCleanup = null;
+    let isServerIdle = false;
 
     const rawUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
     const wsUrl = normalizeWsUrl(rawUrl);
     const wakeupUrl = getHttpWakeupUrl(wsUrl);
 
+    const enterStandby = () => {
+      if (!isMounted) return;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+      if (ws.current) {
+        ws.current.onclose = null;
+        ws.current.close();
+      }
+
+      setStatus("Standby (Click to Wake)");
+      console.log('Session entered standby. Waiting for user interaction to wake up...');
+
+      const wakeUp = () => {
+        if (wakeListenerCleanup) {
+          wakeListenerCleanup();
+          wakeListenerCleanup = null;
+        }
+        if (isMounted) {
+          console.log('User interaction detected — waking from standby...');
+          lastActivityRef.current = Date.now();
+          connect();
+        }
+      };
+
+      window.addEventListener('pointerdown', wakeUp);
+      window.addEventListener('keydown', wakeUp);
+      window.addEventListener('touchstart', wakeUp);
+      window.addEventListener('focus', wakeUp);
+
+      wakeListenerCleanup = () => {
+        window.removeEventListener('pointerdown', wakeUp);
+        window.removeEventListener('keydown', wakeUp);
+        window.removeEventListener('touchstart', wakeUp);
+        window.removeEventListener('focus', wakeUp);
+      };
+    };
+
     const connect = () => {
       if (!isMounted) return;
 
-      // Clean up any pending wake listeners
       if (wakeListenerCleanup) {
         wakeListenerCleanup();
         wakeListenerCleanup = null;
       }
+      isServerIdle = false;
 
       setStatus("Connecting...");
       console.log(`Attempting WebSocket connection to: ${wsUrl}`);
@@ -83,29 +139,12 @@ function App() {
         socket.onclose = (event) => {
           if (!isMounted) return;
 
-          // Check if the backend intentionally closed this connection due to inactivity
-          if (event.code === 4001 || event.reason === "Session idle timeout") {
-            setStatus("Standby (Click to Wake)");
-            console.log('Session entered standby due to inactivity. Waiting for user interaction to reconnect...');
+          const idleDuration = Date.now() - lastActivityRef.current;
+          const isClientIdle = idleDuration >= 4.5 * 60 * 1000; // Inactive for >= 4.5m
 
-            const wakeUp = () => {
-              if (wakeListenerCleanup) {
-                wakeListenerCleanup();
-                wakeListenerCleanup = null;
-              }
-              if (isMounted) {
-                console.log('User interaction detected — waking from standby...');
-                connect();
-              }
-            };
-
-            window.addEventListener('pointerdown', wakeUp);
-            window.addEventListener('keydown', wakeUp);
-
-            wakeListenerCleanup = () => {
-              window.removeEventListener('pointerdown', wakeUp);
-              window.removeEventListener('keydown', wakeUp);
-            };
+          // Check if closure was due to idle timeout (explicit message, code 4001, reason, or client inactivity)
+          if (isServerIdle || event.code === 4001 || event.reason === "Session idle timeout" || isClientIdle) {
+            enterStandby();
           } else {
             // Unintended drop or server cold-start retry
             setStatus("Connecting...");
@@ -123,6 +162,13 @@ function App() {
           if (!isMounted) return;
           try {
             const data = JSON.parse(event.data);
+
+            if (data.type === "IDLE_TIMEOUT") {
+              console.log("Received IDLE_TIMEOUT from server");
+              isServerIdle = true;
+              enterStandby();
+              return;
+            }
 
             if (data.type === "GRID_UPDATE") {
               const size = 32;
