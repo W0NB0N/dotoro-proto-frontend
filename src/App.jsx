@@ -40,10 +40,63 @@ function App() {
   const [grid, setGrid] = useState([]);
   const [status, setStatus] = useState("Connecting...");
   const [theme, setTheme] = useState(null);
-  const [powered, setPowered] = useState(true);
+  const [powered, setPowered] = useState(false);
   const ws = useRef(null);
   const connectRef = useRef(null);
   const lastActivityRef = useRef(Date.now());
+  const audioRef = useRef(null);
+  const alarmIntervalRef = useRef(null);
+
+  const stopAlarm = () => {
+    if (alarmIntervalRef.current) {
+      clearInterval(alarmIntervalRef.current);
+      alarmIntervalRef.current = null;
+      console.log("Timer alarm sound stopped");
+    }
+  };
+
+  const playAlarmBeeps = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      const beepTimes = [0, 0.12, 0.24, 0.48, 0.60, 0.72];
+      beepTimes.forEach((t) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(1046.5, now + t);
+        gain.gain.setValueAtTime(0.22, now + t);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + t + 0.09);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + t);
+        osc.stop(now + t + 0.09);
+      });
+    } catch (e) {
+      console.warn("Failed to play timer alarm sound:", e);
+    }
+  };
+
+  const startRepeatingAlarm = () => {
+    stopAlarm();
+    playAlarmBeeps();
+    alarmIntervalRef.current = setInterval(playAlarmBeeps, 1400);
+  };
+
+  // Pre-warm audio on user gesture so boot sound is never blocked by autoplay policy
+  const unlockAudio = () => {
+    try {
+      if (!audioRef.current) {
+        audioRef.current = new Audio('/sounds/boot.mp3');
+        audioRef.current.volume = 0.55;
+      }
+      audioRef.current.load();
+    } catch (e) {
+      console.warn("Audio unlock failed:", e);
+    }
+  };
 
   // Track user activity to detect idle state accurately on client
   useEffect(() => {
@@ -92,6 +145,7 @@ function App() {
         if (isMounted) {
           console.log('User interaction detected — waking from standby...');
           lastActivityRef.current = Date.now();
+          unlockAudio();
           connect();
         }
       };
@@ -181,11 +235,25 @@ function App() {
               if (data.theme) {
                 setTheme(data.theme);
               }
+
+              if (typeof data.powered === 'boolean') {
+                setPowered(data.powered);
+              }
             } else if (data.type === "BOOT_COMPLETE") {
               console.log("BIOS boot complete - playing sound");
-              const audio = new Audio('/sounds/boot.mp3');
-              audio.volume = 0.55;
-              audio.play().catch(e => console.warn("Failed to play boot sound:", e));
+              if (audioRef.current) {
+                audioRef.current.currentTime = 0;
+                audioRef.current.play().catch(e => console.warn("Failed to play boot sound:", e));
+              } else {
+                const audio = new Audio('/sounds/boot.mp3');
+                audio.volume = 0.55;
+                audio.play().catch(e => console.warn("Failed to play boot sound:", e));
+              }
+            } else if (data.type === "TIMER_ALARM") {
+              console.log("Timer alarm reached 00:00 - starting repeating alarm sound");
+              startRepeatingAlarm();
+            } else if (data.type === "STOP_ALARM") {
+              stopAlarm();
             }
           } catch (e) {
             console.error("Error parsing WebSocket message:", e);
@@ -202,6 +270,7 @@ function App() {
 
     return () => {
       isMounted = false;
+      stopAlarm();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
       if (wakeListenerCleanup) wakeListenerCleanup();
       if (ws.current) {
@@ -220,9 +289,12 @@ function App() {
   }, [theme]);
 
   const handleInput = (eventName) => {
-    if (!powered) return; // Drop inputs when powered off
+    lastActivityRef.current = Date.now();
+    stopAlarm(); // Stop alarm sound on any user key press or interaction
+    if (!powered && eventName !== 'Boot' && eventName !== 'Power') return;
     if (status.startsWith("Standby")) {
       console.log(`Input received during standby: ${eventName} — waking up...`);
+      unlockAudio();
       if (connectRef.current) connectRef.current();
       return;
     }
@@ -234,35 +306,29 @@ function App() {
   };
 
   const handlePowerToggle = () => {
-    setPowered(prev => {
-      const next = !prev;
-      console.log(`Power toggled: ${next ? 'ON' : 'OFF'}`);
+    stopAlarm();
+    unlockAudio();
+    lastActivityRef.current = Date.now();
+    console.log(`Power button pressed. Current state: ${powered ? 'ON' : 'OFF'}`);
 
-      // If we are turning it ON, trigger the BIOS boot sequence on the backend
-      if (next) {
-        if (status.startsWith("Standby") && connectRef.current) {
-          connectRef.current();
-        } else if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-          ws.current.send(JSON.stringify({ event: 'Boot' }));
-        }
-      }
+    if (status.startsWith("Standby") && connectRef.current) {
+      connectRef.current();
+    }
 
-      return next;
-    });
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      const eventName = powered ? "Power" : "Boot";
+      ws.current.send(JSON.stringify({ event: eventName }));
+      console.log(`Sent event: ${eventName}`);
+    }
   };
 
   const titleColor = theme?.foreground || '#00ff66';
 
   return (
     <div className="app-container">
-      {/* Dynamic scanlines for CRT monitor feel */}
-      <div className="crt-overlay" />
-      <div className="scan-bar" />
-      <div className="crt-vignette" />
-
       <header className="header-bar">
         <h1 className="title-glow" style={{ color: titleColor, textShadow: `0 0 12px ${titleColor}66` }}>
-          Dotoro OS
+          Dotoro
         </h1>
         <div
           className="system-status"
@@ -284,8 +350,8 @@ function App() {
           onPowerToggle={handlePowerToggle}
         />
         {!powered && (
-          <div className="power-overlay">
-            <span className="power-text">STANDBY</span>
+          <div className="power-overlay" onClick={handlePowerToggle}>
+            <span className="power-text">PRESS POWER TO START</span>
           </div>
         )}
       </div>
@@ -309,7 +375,7 @@ function App() {
             <li><strong>Arrow keys:</strong> D-Pad navigation</li>
             <li><strong>Enter key:</strong> Select/Confirm</li>
             <li><strong>M key:</strong> Back to Menu</li>
-            <li><strong>B key:</strong> Toggle power standby</li>
+            <li><strong>B / Boot key:</strong> Power On / Off</li>
           </ul>
         </div>
       </div>

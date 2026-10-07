@@ -14,7 +14,10 @@ const InputController = ({ onInput }) => {
                 case 'ArrowLeft': eventName = 'Left'; break;
                 case 'ArrowRight': eventName = 'Right'; break;
                 case 'Enter': eventName = 'Enter'; break;
-                case 'm': eventName = 'Menu'; break;
+                case 'm':
+                case 'M': eventName = 'Menu'; break;
+                case 'b':
+                case 'B': eventName = 'Boot'; break;
             }
 
             if (eventName) {

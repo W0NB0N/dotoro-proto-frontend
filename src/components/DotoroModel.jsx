@@ -11,8 +11,8 @@ export default function DotoroModel({ gridData, onInput, powered, onPowerToggle 
   // Instantiate the clack sound hook
   const { playKeyClick } = useKeySound();
 
-  // Generate dynamic pixel grid texture
-  const pixelTexture = usePixelTexture(powered ? gridData : []);
+  // Generate dynamic pixel grid texture with screen-only CRT effect
+  const pixelTexture = usePixelTexture(gridData, powered);
 
   // References for key meshes to animate their positions
   const keyUpRef = useRef();
